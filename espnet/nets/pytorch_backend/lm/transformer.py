@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 from espnet.nets.lm_interface import LMInterface
 from espnet.nets.pytorch_backend.transformer.embedding import PositionalEncoding
-from espnet.nets.pytorch_backend.transformer.encoder import Encoder
+from espnet.nets.pytorch_backend.transformer.encoder_wordscale import Encoder
 from espnet.nets.pytorch_backend.transformer.mask import subsequent_mask
 from espnet.nets.scorer_interface import BatchScorerInterface
 
@@ -93,8 +93,14 @@ class TransformerLM(nn.Module, LMInterface, BatchScorerInterface):
         m = subsequent_mask(ys_mask.size(-1), device=ys_mask.device).unsqueeze(0)
         return ys_mask.unsqueeze(-2) & m
 
+    def _word_target_mask(self, ys_in_pad, aver_mask):
+        ys_mask = ys_in_pad != 0
+        m = subsequent_mask(ys_mask.size(-1), device=ys_mask.device).unsqueeze(0)
+        word_m = (aver_mask!=0) | m
+        return ys_mask.unsqueeze(-2) & word_m
+
     def forward(
-        self, x: torch.Tensor, t: torch.Tensor
+        self, x: torch.Tensor, t: torch.Tensor, aver_mask: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute LM loss value from buffer sequences.
 
@@ -114,7 +120,8 @@ class TransformerLM(nn.Module, LMInterface, BatchScorerInterface):
 
         """
         xm = x != 0
-        h, _ = self.encoder(self.embed(x), self._target_mask(x))
+        h, _ = self.encoder(self.embed(x), self._target_mask(x), \
+                            aver_mask, self._word_target_mask(x, aver_mask))
         y = self.decoder(h)
         loss = F.cross_entropy(y.view(-1, y.shape[-1]), t.view(-1), reduction="none")
         mask = xm.to(dtype=loss.dtype)

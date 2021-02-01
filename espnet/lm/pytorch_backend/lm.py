@@ -46,6 +46,7 @@ from espnet.utils.training.iterators import ShufflingEnabler
 from espnet.utils.training.train_utils import check_early_stop
 from espnet.utils.training.train_utils import set_early_stop
 
+import time
 
 def compute_perplexity(result):
     """Compute and add the perplexity to the LogReport.
@@ -85,6 +86,20 @@ def concat_examples(batch, device=None, padding=None):
         t = t.cuda(device)
     return x, t
 
+def concat_examples_one(batch, device=None, padding=None):
+    """Concat examples in minibatch.
+
+    :param np.ndarray batch: The batch to concatenate
+    :param int device: The device to send to
+    :param Tuple[int,int] padding: The padding to use
+    :return: (inputs, targets)
+    :rtype (torch.Tensor, torch.Tensor)
+    """
+    x = convert.concat_examples(batch, padding=padding)
+    x = torch.from_numpy(x)
+    if device is not None and device >= 0:
+        x = x.cuda(device)
+    return x
 
 class BPTTUpdater(training.StandardUpdater):
     """An updater for a pytorch LM."""
@@ -133,16 +148,17 @@ class BPTTUpdater(training.StandardUpdater):
         self.model.zero_grad()  # Clear the parameter gradients
         accum = {"loss": 0.0, "nll": 0.0, "count": 0}
         for _ in range(self.accum_grad):
-            batch = train_iter.__next__()
+            batch, aver_mask = train_iter.__next__(aver_mask=True)
             # Concatenate the token IDs to matrices and send them to the device
             # self.converter does this job
             # (it is chainer.dataset.concat_examples by default)
             x, t = concat_examples(batch, device=self.device[0], padding=(0, -100))
+            aver_mask = concat_examples_one(aver_mask, device=self.device[0], padding=0)
             if self.device[0] == -1:
-                loss, nll, count = self.model(x, t)
+                loss, nll, count = self.model(x, t, aver_mask)
             else:
                 # apex does not support torch.nn.DataParallel
-                loss, nll, count = data_parallel(self.model, (x, t), self.device)
+                loss, nll, count = data_parallel(self.model, (x, t, aver_mask), self.device)
 
             # backward
             loss = loss.mean() / self.accum_grad
@@ -191,12 +207,13 @@ class LMEvaluator(BaseEvaluator):
         self.model.eval()
         with torch.no_grad():
             for batch in copy.copy(val_iter):
-                x, t = concat_examples(batch, device=self.device[0], padding=(0, -100))
+                x, t = concat_examples(batch[0], device=self.device[0], padding=(0, -100))
+                aver_mask = concat_examples_one(batch[1], device=self.device[0], padding=0)
                 if self.device[0] == -1:
-                    l, n, c = self.model(x, t)
+                    l, n, c = self.model(x, t, aver_mask)
                 else:
                     # apex does not support torch.nn.DataParallel
-                    l, n, c = data_parallel(self.model, (x, t), self.device)
+                    l, n, c = data_parallel(self.model, (x, t, aver_mask), self.device)
                 loss += float(l.sum())
                 nll += float(n.sum())
                 count += int(c.sum())
@@ -377,8 +394,8 @@ def train(args):
             TensorboardLogger(writer), trigger=(args.report_interval_iters, "iteration")
         )
 
-    trainer.run()
-    check_early_stop(trainer, args.epoch)
+    # trainer.run()
+    # check_early_stop(trainer, args.epoch)
 
     # compute perplexity for test set
     if args.test_label:

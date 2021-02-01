@@ -69,12 +69,34 @@ def read_tokens(filename, label_dict):
 
     data = []
     unk = label_dict["<unk>"]
+    label_all = np.array([])
     for ln in tqdm(open(filename, "r", encoding="utf-8")):
-        data.append(
-            np.array(
-                [label_dict.get(label, unk) for label in ln.split()], dtype=np.int32
-            )
-        )
+        nt = 0 #number of token in this word
+        tmp=[]; aver_mask = np.zeros([len(ln.split()), len(ln.split())])
+        for i in range(len(ln.split())):
+            label = ln.split()[i]
+            label_all = np.append(label_all, label_dict.get(label, unk))
+            if "▁" in label: #count "▁" from 1, 0 for <sos>.
+                tmp.append(nt)
+                if i > 0:
+                    prev_pos=int(sum(tmp[0:len(tmp)-1]))#tmp[0,...,i-2]
+                    curr_pos=int(sum(tmp[0:len(tmp)]))#tmp[0,...,i-1]
+                    aver_mask[prev_pos:curr_pos,prev_pos:curr_pos]=1/nt #this is for previous word
+                nt = 0
+            nt = nt + 1
+        tmp.append(nt)
+        prev_pos = int(sum(tmp[0:len(tmp) - 1]))  # tmp[0,...,i-2]
+        curr_pos = int(sum(tmp[0:len(tmp)]))  # tmp[0,...,i-1]
+        aver_mask[prev_pos:curr_pos, prev_pos:curr_pos] = 1 / nt
+
+        data.append([np.array(label_all, dtype=np.int32), np.array(aver_mask)])
+        label_all = np.array([])
+        aver_mask = np.array([])
+        # data.append(
+        #     np.array(
+        #         [label_dict.get(label, unk) for label in ln.split()], dtype=np.int32
+        #     )
+        # )
     return data
 
 
@@ -93,9 +115,9 @@ def count_tokens(data, unk_id=None):
     n_tokens = 0
     n_oovs = 0
     for sentence in data:
-        n_tokens += len(sentence)
+        n_tokens += len(sentence[0])
         if unk_id is not None:
-            n_oovs += np.count_nonzero(sentence == unk_id)
+            n_oovs += np.count_nonzero(sentence[0] == unk_id)
     return n_tokens, n_oovs
 
 
@@ -135,14 +157,14 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
         self.batch_indices = []
         # make mini-batches
         if batch_size > 1:
-            indices = sorted(range(len(dataset)), key=lambda i: -len(dataset[i]))
+            indices = sorted(range(len(dataset)), key=lambda i: -len(dataset[i][0]))
             bs = 0
             while bs < length:
                 be = min(bs + batch_size, length)
                 # batch size is automatically reduced if the sentence length
                 # is larger than max_length
                 if max_length > 0:
-                    sent_length = len(dataset[indices[bs]])
+                    sent_length = len(dataset[indices[bs]][0])
                     be = min(
                         be, bs + max(batch_size // (sent_length // max_length + 1), 1)
                     )
@@ -162,7 +184,7 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
         # use -1 instead of None internally
         self._previous_epoch_detail = -1.0
 
-    def __next__(self):
+    def __next__(self, aver_mask=None):
         # This iterator returns a list representing a mini-batch. Each item
         # indicates a sentence pair like '<sos> w1 w2 w3' and 'w1 w2 w3 <eos>'
         # represented by token IDs.
@@ -173,14 +195,24 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
             raise StopIteration
 
         batch = []
+        aver_mask = []
         for idx in self.batch_indices[self.iteration % n_batches]:
             batch.append(
                 (
-                    np.append([self.sos], self.dataset[idx]),
-                    np.append(self.dataset[idx], [self.eos]),
+                    np.append([self.sos], self.dataset[idx][0]),
+                    np.append(self.dataset[idx][0], [self.eos]),
                 )
             )
-
+        if aver_mask is not None:
+            for idx in self.batch_indices[self.iteration % n_batches]:
+                add_1 = np.zeros([self.dataset[idx][1].shape[1],1])
+                add_2 = np.zeros([1,self.dataset[idx][1].shape[1]+1])
+                add_2[0][0]=1
+                aver_mask.append(
+                    (
+                        np.vstack((add_2, np.hstack((add_1, self.dataset[idx][1]))))
+                    )
+                )
         self._previous_epoch_detail = self.epoch_detail
         self.iteration += 1
 
@@ -189,7 +221,10 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
         if self.is_new_epoch:
             self.epoch = epoch
 
-        return batch
+        if aver_mask is not None:
+            return batch, aver_mask
+        else:
+            return batch
 
     def start_shuffle(self):
         random.shuffle(self.batch_indices)
