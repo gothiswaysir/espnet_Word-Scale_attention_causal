@@ -394,8 +394,8 @@ def train(args):
             TensorboardLogger(writer), trigger=(args.report_interval_iters, "iteration")
         )
 
-    # trainer.run()
-    # check_early_stop(trainer, args.epoch)
+    trainer.run()
+    check_early_stop(trainer, args.epoch)
 
     # compute perplexity for test set
     if args.test_label:

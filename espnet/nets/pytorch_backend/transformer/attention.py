@@ -236,8 +236,8 @@ class MultiHeadedAttention_wordscale(nn.Module):
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)
 
         aver_mask = aver_mask.unsqueeze(1).expand(q.shape[0], q.shape[1], q.shape[2], q.shape[2]).float()
-        q_w = torch.matmul(aver_mask, q).squeeze()
-        k_w = torch.matmul(aver_mask, k).squeeze()
+        q_w = torch.matmul(aver_mask, q)
+        k_w = torch.matmul(aver_mask, k)
         scores_w = torch.matmul(q_w, k_w.transpose(-2, -1)) / math.sqrt(self.d_k)
         word_level = self.forward_attention(v, scores_w, word_mask)
         subword_level = self.forward_attention(v, scores, mask)
