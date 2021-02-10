@@ -47,6 +47,9 @@ from espnet.utils.training.train_utils import check_early_stop
 from espnet.utils.training.train_utils import set_early_stop
 
 import time
+import chainer
+from chainer import backend
+import six
 
 def compute_perplexity(result):
     """Compute and add the perplexity to the LogReport.
@@ -101,6 +104,44 @@ def concat_examples_one(batch, device=None, padding=None):
         x = x.cuda(device)
     return x
 
+def concat_examples_pad_last_2dim(batch, device=None):
+    """Concat examples in minibatch.
+
+    :param np.ndarray batch: The batch to concatenate
+    :param int device: The device to send to
+    :param Tuple[int,int] padding: The padding to use
+    :return: (inputs, targets)
+    :rtype (torch.Tensor, torch.Tensor)
+    """
+    #skip padding, to save computation, since it need lots of loop. Do padding when loopping in attention.
+
+    # shape = np.array(batch[0].shape[1:], dtype=int)
+    # for array in batch[1:]:
+    #     if np.any(shape != array.shape[1:]):
+    #         np.maximum(shape, array.shape[1:], shape)
+    # # shape = tuple(np.insert(shape, 0, [len(batch),]))
+    # shape_max = shape
+    # result_all = []
+    #
+    # for i in six.moves.range(len(batch)):
+    #     if np.any(shape_max == batch[i].shape[1:]):
+    #         result_all.append(torch.from_numpy(batch[i]))
+    #         continue
+    #     shape = tuple(np.insert(shape_max, 0, batch[i].shape[0]))
+    #     result = np.full(shape, False)
+    #     for j in six.moves.range(batch[i].shape[0]): #scan number of block (x,y) to be averaged
+    #         src = batch[i][j]
+    #         slices = tuple(slice(dim) for dim in src.shape)
+    #         result[(j,) + slices] = src
+    #     result_all.append(torch.from_numpy(result))
+    result_all = []
+    for i in six.moves.range(len(batch)):
+        result_all.append(torch.from_numpy(batch[i]))
+    if device is not None and device >= 0:
+        for x in result_all:
+            x.cuda(device)
+    return result_all
+
 class BPTTUpdater(training.StandardUpdater):
     """An updater for a pytorch LM."""
 
@@ -148,12 +189,12 @@ class BPTTUpdater(training.StandardUpdater):
         self.model.zero_grad()  # Clear the parameter gradients
         accum = {"loss": 0.0, "nll": 0.0, "count": 0}
         for _ in range(self.accum_grad):
-            batch, aver_mask = train_iter.__next__(aver_mask=True)
+            batch, aver_mask, tmp = train_iter.__next__(aver_mask=True)
             # Concatenate the token IDs to matrices and send them to the device
             # self.converter does this job
             # (it is chainer.dataset.concat_examples by default)
             x, t = concat_examples(batch, device=self.device[0], padding=(0, -100))
-            aver_mask = concat_examples_one(aver_mask, device=self.device[0], padding=0)
+            aver_mask = concat_examples_pad_last_2dim(aver_mask, device=self.device[0]) #pad with false
             if self.device[0] == -1:
                 loss, nll, count = self.model(x, t, aver_mask)
             else:

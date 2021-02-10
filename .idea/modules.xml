@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/espnet_20_Nov.iml" filepath="$PROJECT_DIR$/.idea/espnet_20_Nov.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/espnet_Word-Scale_attention_causal.iml" filepath="$PROJECT_DIR$/.idea/espnet_Word-Scale_attention_causal.iml" />
     </modules>
   </component>
 </project>

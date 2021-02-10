@@ -279,7 +279,7 @@ class Encoder(torch.nn.Module):
             raise NotImplementedError("Support only linear or conv1d.")
         return positionwise_layer, positionwise_layer_args
 
-    def forward(self, xs, masks, aver_mask, word_mask):
+    def forward(self, xs, masks, aver_mask):
         """Encode input sequence.
 
         Args:
@@ -298,7 +298,7 @@ class Encoder(torch.nn.Module):
             xs, masks = self.embed(xs, masks)
         else:
             xs = self.embed(xs)
-        xs, masks, aver_mask, word_mask = self.encoders(xs, masks, aver_mask, word_mask)
+        xs, masks, aver_mask, word_mask = self.encoders(xs, masks, aver_mask)
         if self.normalize_before:
             xs = self.after_norm(xs)
         return xs, masks

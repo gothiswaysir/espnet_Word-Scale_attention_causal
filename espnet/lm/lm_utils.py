@@ -71,34 +71,43 @@ def read_tokens(filename, label_dict):
     unk = label_dict["<unk>"]
     label_all = np.array([])
     for ln in tqdm(open(filename, "r", encoding="utf-8")):
-        nt = 0 #number of token in this word
-        tmp=[]; aver_mask = np.zeros([len(ln.split()), len(ln.split())])
+        nt = 1  # number of token in this word, start from 1 for <sos>. Take <sos> into consideration, then do not need to add <sos> in __next__()
+        tmp_s=[]; tmp=[]
+        aver_mask_word = np.full([len(ln.split())+1, len(ln.split())+1], False); aver_mask = [] #one aver_mask_word only for one (x,y) block, namely one 'subword-to-subword' attention.
+        background = np.full([len(ln.split()) + 1, len(ln.split()) + 1], False) #background namely those block that only have one element, do not need to average, we can add them together as one to save computation.
         for i in range(len(ln.split())):
             label = ln.split()[i]
             label_all = np.append(label_all, label_dict.get(label, unk))
-            if "▁" in label: #count "▁" from 1, 0 for <sos>.
-                tmp.append(nt)
-                if i > 0:
-                    prev_pos=int(sum(tmp[0:len(tmp)-1]))#tmp[0,...,i-2]
-                    curr_pos=int(sum(tmp[0:len(tmp)]))#tmp[0,...,i-1]
-                    aver_mask[prev_pos:curr_pos,prev_pos:curr_pos]=1/nt #this is for previous word
+            if "▁" in label: #count "▁" from 1, 0 for <sos>. "▁" means there is a word in front.
+                tmp_s.append(nt)
+                aver_mask, background = \
+                    aver_mask_for_one_line(tmp_s, aver_mask_word, background, aver_mask)
                 nt = 0
             nt = nt + 1
-        tmp.append(nt)
-        prev_pos = int(sum(tmp[0:len(tmp) - 1]))  # tmp[0,...,i-2]
-        curr_pos = int(sum(tmp[0:len(tmp)]))  # tmp[0,...,i-1]
-        aver_mask[prev_pos:curr_pos, prev_pos:curr_pos] = 1 / nt
-
-        data.append([np.array(label_all, dtype=np.int32), np.array(aver_mask)])
+        tmp_s.append(nt)
+        aver_mask, background = \
+            aver_mask_for_one_line(tmp_s, aver_mask_word, background, aver_mask)
+        aver_mask.append(background)
+        tmp.append(tmp_s)
+        data.append([np.array(label_all, dtype=np.int32), np.array(aver_mask), tmp])
         label_all = np.array([])
-        aver_mask = np.array([])
-        # data.append(
-        #     np.array(
-        #         [label_dict.get(label, unk) for label in ln.split()], dtype=np.int32
-        #     )
-        # )
+
     return data
 
+def aver_mask_for_one_line(tmp_s, aver_mask_word, background, aver_mask):
+    aver_mask_word = np.full(aver_mask_word.shape, False)
+    for word_n in range(len(tmp_s)):
+        prev_column = int(sum(tmp_s[0:word_n]))  # tmp[0,...,i-2]
+        curr_column = int(sum(tmp_s[0:word_n + 1]))
+        prev_line = int(sum(tmp_s[0:len(tmp_s) - 1]))
+        curr_line = int(sum(tmp_s[0:len(tmp_s)]))  # tmp[0,...,i-1]
+        aver_mask_word[prev_line:curr_line, prev_column:curr_column] = True  # this is for per word
+        if curr_line-prev_line == 1 and curr_column-prev_column == 1:
+            background = background + aver_mask_word
+        else:
+            aver_mask.append(aver_mask_word)
+        aver_mask_word = np.full(aver_mask_word.shape, False)
+    return aver_mask, background
 
 def count_tokens(data, unk_id=None):
     """Count tokens and oovs in token ID sequences.
@@ -195,7 +204,7 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
             raise StopIteration
 
         batch = []
-        aver_mask = []
+        batch_aver_mask = []; tmp=[]
         for idx in self.batch_indices[self.iteration % n_batches]:
             batch.append(
                 (
@@ -203,16 +212,10 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
                     np.append(self.dataset[idx][0], [self.eos]),
                 )
             )
-        if aver_mask is not None:
+        if batch_aver_mask is not None:
             for idx in self.batch_indices[self.iteration % n_batches]:
-                add_1 = np.zeros([self.dataset[idx][1].shape[1],1])
-                add_2 = np.zeros([1,self.dataset[idx][1].shape[1]+1])
-                add_2[0][0]=1
-                aver_mask.append(
-                    (
-                        np.vstack((add_2, np.hstack((add_1, self.dataset[idx][1]))))
-                    )
-                )
+                batch_aver_mask.append(self.dataset[idx][1])# dont need to add <sos>. already did it in dataloader
+                tmp.append(self.dataset[idx][2])
         self._previous_epoch_detail = self.epoch_detail
         self.iteration += 1
 
@@ -222,7 +225,7 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
             self.epoch = epoch
 
         if aver_mask is not None:
-            return batch, aver_mask
+            return batch, batch_aver_mask, tmp
         else:
             return batch
 
