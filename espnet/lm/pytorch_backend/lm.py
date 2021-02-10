@@ -115,28 +115,28 @@ def concat_examples_pad_last_2dim(batch, device=None):
     """
     #skip padding, to save computation, since it need lots of loop. Do padding when loopping in attention.
 
-    # shape = np.array(batch[0].shape[1:], dtype=int)
-    # for array in batch[1:]:
-    #     if np.any(shape != array.shape[1:]):
-    #         np.maximum(shape, array.shape[1:], shape)
-    # # shape = tuple(np.insert(shape, 0, [len(batch),]))
-    # shape_max = shape
-    # result_all = []
-    #
-    # for i in six.moves.range(len(batch)):
-    #     if np.any(shape_max == batch[i].shape[1:]):
-    #         result_all.append(torch.from_numpy(batch[i]))
-    #         continue
-    #     shape = tuple(np.insert(shape_max, 0, batch[i].shape[0]))
-    #     result = np.full(shape, False)
-    #     for j in six.moves.range(batch[i].shape[0]): #scan number of block (x,y) to be averaged
-    #         src = batch[i][j]
-    #         slices = tuple(slice(dim) for dim in src.shape)
-    #         result[(j,) + slices] = src
-    #     result_all.append(torch.from_numpy(result))
+    shape = np.array(batch[0].shape[1:], dtype=int)
+    for array in batch[1:]:
+        if np.any(shape != array.shape[1:]):
+            np.maximum(shape, array.shape[1:], shape)
+    # shape = tuple(np.insert(shape, 0, [len(batch),]))
+    shape_max = shape
     result_all = []
+
     for i in six.moves.range(len(batch)):
-        result_all.append(torch.from_numpy(batch[i]))
+        if np.any(shape_max == batch[i].shape[1:]):
+            result_all.append(torch.from_numpy(batch[i]))
+            continue
+        shape = tuple(np.insert(shape_max, 0, batch[i].shape[0]))
+        result = np.full(shape, False)
+        for j in six.moves.range(batch[i].shape[0]): #scan number of block (x,y) to be averaged
+            src = batch[i][j]
+            slices = tuple(slice(dim) for dim in src.shape)
+            result[(j,) + slices] = src
+        result_all.append(torch.from_numpy(result))
+    # result_all = []
+    # for i in six.moves.range(len(batch)):
+    #     result_all.append(torch.from_numpy(batch[i]))
     if device is not None and device >= 0:
         for x in result_all:
             x.cuda(device)

@@ -185,18 +185,21 @@ class MultiHeadedAttention_wordscale(nn.Module):
                 scores_fillzero = scores.masked_fill(mask, 0)
                 score_aver = []
                 for i in range(len(aver_mask)): #batchsize
-                    aver_mask_suminword = aver_mask[i].sum(dim=0)
-                    aver_mask_suminword_reverse = torch.ones_like(aver_mask_suminword) - aver_mask_suminword
-                    score_aver_aword = torch.mul(scores_fillzero[i,:,:,:], aver_mask_suminword_reverse.unsqueeze(0).repeat(self.h,1,1))
-                    # score_aver_aword = torch.zeros(scores.shape[1], scores.shape[2], scores.shape[3]).unsqueeze(0).to(scores.device)
+                    # aver_mask_suminword = aver_mask[i].sum(dim=0)
+                    # aver_mask_suminword_reverse = torch.ones_like(aver_mask_suminword) - aver_mask_suminword
+                    # score_aver_aword = torch.mul(scores_fillzero[i,:,:,:], aver_mask_suminword_reverse.unsqueeze(0).repeat(self.h,1,1))
+                    score_aver_aword = torch.zeros(scores.shape[1], scores.shape[2], scores.shape[3]).unsqueeze(0).to(scores.device)
                     for j in range(aver_mask[i].shape[0]): #number of word
                         #first copy current word aver_mask to number of head, then causal mask.
-                        aver_mask_causal = aver_mask[i][j].unsqueeze(0).repeat(self.h,1,1).masked_fill(mask[i], 0)
+                        aver_mask_causal = aver_mask[i][j].unsqueeze(0).repeat(self.h,1,1).masked_fill(mask[i], False)
                         one_word_part = torch.mul(scores_fillzero[i], aver_mask_causal)#a little bit worry about this. can dot product over head? can
-                        aver_value = (one_word_part.sum([1,2]).double()/aver_mask_causal.sum([1,2]).double()).unsqueeze(-1).unsqueeze(-1)#aver_value of each head
-                        score_aver_aword = score_aver_aword + aver_mask_causal*aver_value
-                    score_aver.append(score_aver_aword.unsqueeze(0))
-                    score_aver = torch.cat(score_aver, dim=0)
+                        if j == aver_mask[i].shape[0] -1: #last one is the background, donot need to average
+                            score_aver_aword = score_aver_aword + one_word_part
+                        else:
+                            aver_value = (one_word_part.sum([1,2]).float()/aver_mask_causal.sum([1,2]).float()).unsqueeze(-1).unsqueeze(-1)#aver_value of each head
+                            score_aver_aword = score_aver_aword + aver_mask_causal*aver_value
+                    score_aver.append(score_aver_aword)
+                score_aver = torch.cat(score_aver, dim=0)
                 scores = score_aver.masked_fill(mask, min_value)
                 pass
             else:
