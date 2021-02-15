@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="1b47c3f6-6ce3-417c-95a0-f3fd264bc1dd" name="HLT07">
+        <fileTransfer rootFolder="/data07/xinyuan/espnet_my/espnet_Word-Scale_attention_causal" accessType="SFTP" host="172.16.31.217" port="22" sshConfigId="b611fc4f-3c40-4cc4-90a0-2ad439f3ce15" sshConfig="HLT07" />
+      </webServer>
+    </option>
+  </component>
+</project>
