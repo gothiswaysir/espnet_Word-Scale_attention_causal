@@ -183,6 +183,12 @@ def get_parser(parser=None, required=True):
         help="model defined module "
         "(default: espnet.nets.xxx_backend.lm.default:DefaultRNNLM)",
     )
+    parser.add_argument(
+        "--dataloader-save-dir",
+        type=str,
+        default=None,
+        help="load from a already loaded json file",
+    )
     return parser
 
 

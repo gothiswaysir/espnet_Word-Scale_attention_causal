@@ -14,11 +14,12 @@ import os
 import random
 import six
 from tqdm import tqdm
+import json
 
 from chainer.training import extension
 
 
-def load_dataset(path, label_dict, outdir=None):
+def load_dataset(path, label_dict, saved_dataloader, outdir=None):
     """Load and save HDF5 that contains a dataset and stats for LM
 
     Args:
@@ -43,6 +44,17 @@ def load_dataset(path, label_dict, outdir=None):
     else:
         logging.info("skip dump/load HDF5 because the output dir is not specified")
     logging.info(f"reading text dataset: {path}")
+    # if saved_dataloader is not None:
+    #     if os.path.exists(saved_dataloader):
+    #         ret = read_tokens(path, label_dict)
+    #         ret2 = np.load(saved_dataloader,allow_pickle=True)
+    #         # ret2 = json.load(open(saved_dataloader+'1'))
+    #     else:
+    #         ret = read_tokens(path, label_dict)
+    #         np.save(saved_dataloader, ret)
+    #         # json_file = open(saved_dataloader+'1', mode='w')
+    #         # json.dump(ret, json_file, indent=4)
+    # else:
     ret = read_tokens(path, label_dict)
     n_tokens, n_oovs = count_tokens(ret, label_dict["<unk>"])
     if outdir is not None:

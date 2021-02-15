@@ -298,7 +298,7 @@ class Encoder(torch.nn.Module):
             xs, masks = self.embed(xs, masks)
         else:
             xs = self.embed(xs)
-        xs, masks, aver_mask, word_mask = self.encoders(xs, masks, aver_mask)
+        xs, masks, aver_mask = self.encoders(xs, masks, aver_mask)
         if self.normalize_before:
             xs = self.after_norm(xs)
         return xs, masks

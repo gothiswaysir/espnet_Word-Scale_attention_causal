@@ -249,7 +249,7 @@ class LMEvaluator(BaseEvaluator):
         with torch.no_grad():
             for batch in copy.copy(val_iter):
                 x, t = concat_examples(batch[0], device=self.device[0], padding=(0, -100))
-                aver_mask = concat_examples_one(batch[1], device=self.device[0], padding=0)
+                aver_mask = concat_examples_pad_last_2dim(batch[1], device=self.device[0], padding=0)
                 if self.device[0] == -1:
                     l, n, c = self.model(x, t, aver_mask)
                 else:
@@ -290,10 +290,10 @@ def train(args):
     eos = args.char_list_dict["<eos>"]
     # read tokens as a sequence of sentences
     val, n_val_tokens, n_val_oovs = load_dataset(
-        args.valid_label, args.char_list_dict, args.dump_hdf5_path
+        args.valid_label, args.char_list_dict, args.dataloader_save_dir, args.dump_hdf5_path
     )
     train, n_train_tokens, n_train_oovs = load_dataset(
-        args.train_label, args.char_list_dict, args.dump_hdf5_path
+        args.train_label, args.char_list_dict, args.dataloader_save_dir, args.dump_hdf5_path
     )
     logging.info("#vocab = " + str(args.n_vocab))
     logging.info("#sentences in the training data = " + str(len(train)))
