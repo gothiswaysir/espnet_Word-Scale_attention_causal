@@ -218,7 +218,7 @@ class MultiHeadedAttention_wordscale(nn.Module):
                         #(j,k)
         return scores
 
-    def forward(self, query, key, value, mask, aver_mask, word_mask):
+    def forward(self, query, key, value, mask, aver_mask):
         """Compute scaled dot product attention.
 
         Args:
@@ -239,7 +239,7 @@ class MultiHeadedAttention_wordscale(nn.Module):
         q_w = torch.matmul(aver_mask, q)
         k_w = torch.matmul(aver_mask, k)
         scores_w = torch.matmul(q_w, k_w.transpose(-2, -1)) / math.sqrt(self.d_k)
-        word_level = self.forward_attention(v, scores_w, word_mask)
+        word_level = self.forward_attention(v, scores_w)
         subword_level = self.forward_attention(v, scores, mask)
         return subword_level+word_level
 
