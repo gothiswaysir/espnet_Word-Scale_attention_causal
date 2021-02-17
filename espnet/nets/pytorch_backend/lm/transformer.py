@@ -124,6 +124,36 @@ class TransformerLM(nn.Module, LMInterface, BatchScorerInterface):
                             aver_mask)
         y = self.decoder(h)
         loss = F.cross_entropy(y.view(-1, y.shape[-1]), t.view(-1), reduction="none")
+
+        # To print the loss of one single batch
+        # import json
+        # args_dict = "/xinyuan/work_lm_related/librispeech_100_base/data/lang_char/train_960_bpe5000_units.txt"
+        # json_file_path = "/xinyuan/work_lm_related/librispeech_100_base/exp/train_transformerlm_pytorch_Word-Scale_attention_causal_2_bpe5000/onebatchtest_loss.json"
+        #
+        # with open(args_dict, "rb") as f:
+        #     dictionary = f.readlines()
+        # char_list = [entry.decode("utf-8").split(" ")[0] for entry in dictionary]
+        # char_list.insert(0, "<blank>")
+        # char_list.append("<eos>")
+        # dict = {i: x for i, x in enumerate(char_list)}
+        #
+        # json_file = open(json_file_path, mode='w')
+        # utts = []
+        # for i in range(x.shape[0]):
+        #     if False in xm[i]:
+        #         pad_index = xm[i].numpy().tolist().index(False)
+        #     else:
+        #         pad_index = len(xm[i])
+        #     input_text = ' '.join([dict.get(a) for a in x[i][:pad_index].numpy().tolist()])
+        #     label_text = ' '.join([dict.get(a) for a in t[i][:pad_index].numpy().tolist()])
+        #
+        #     loss_each = F.cross_entropy(y[i], t[i], reduction="none").numpy().tolist()[:pad_index]
+        #     loss_each_format = [float('{:.4f}'.format(j)) for j in loss_each]
+        #     dict_save = {"input_text": input_text, "label_text": label_text, "loss_each": loss_each_format}
+        #     utts.append(dict_save.copy())
+        # json.dump(utts, json_file, indent=4)
+        # json_file.close()
+
         mask = xm.to(dtype=loss.dtype)
         logp = loss * mask.view(-1)
         logp = logp.sum()
