@@ -236,14 +236,28 @@ class MultiHeadedAttention_wordscale(nn.Module):
         scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)
 
         aver_mask = aver_mask.unsqueeze(1).expand(q.shape[0], q.shape[1], q.shape[2], q.shape[2]).float()
-        q_w = torch.matmul(aver_mask, q)
+        # q_w = torch.matmul(aver_mask, q)
         k_w = torch.matmul(aver_mask, k)
-        scores_w = torch.matmul(q_w, k_w.transpose(-2, -1)) / math.sqrt(self.d_k)
+        scores_w = torch.matmul(q, k_w.transpose(-2, -1)) / math.sqrt(self.d_k)
         aver_mask_bool = aver_mask.bool()
         aver_mask_bool_neg = ~aver_mask_bool
-        scores_w2 = torch.mul(aver_mask_bool, scores) + torch.mul(aver_mask_bool_neg, scores_w)
+        scores_diag = torch.mul(aver_mask_bool, scores)
+        # for b in range(len(tmp)):
+        #     for i in range(len(tmp[b])):
+        #         if tmp[b][i] <= 1: #only have one token in this word
+        #             continue
+        #         else:
+        #             for j in range(tmp[b][i]):#if the block is 3x3, only the first 2 lines have been effected by causal mask. So minus 1
+        #                 first_position = sum(tmp[b][:i])+1
+        #                 line = first_position+j
+        #                 count_line = j+1
+        #                 for h in range(self.h):
+        #                     scores_diag[b][h][line, first_position:first_position+count_line] = \
+        #                         scores_diag[b][h][line, first_position:first_position+count_line].sum()/count_line
 
-        word_level = self.forward_attention(v, scores_w2, mask.clone())
+        scores_w = scores_diag + torch.mul(aver_mask_bool_neg, scores_w)
+
+        word_level = self.forward_attention(v, scores_w, mask.clone())
         subword_level = self.forward_attention(v, scores, mask)
         return subword_level+word_level
 

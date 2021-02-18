@@ -89,7 +89,7 @@ def read_tokens(filename, label_dict):
         curr_pos = int(sum(tmp[0:len(tmp)]))  # tmp[0,...,i-1]
         aver_mask[prev_pos:curr_pos, prev_pos:curr_pos] = 1 / nt
 
-        data.append([np.array(label_all, dtype=np.int32), np.array(aver_mask)])
+        data.append([np.array(label_all, dtype=np.int32), np.array(aver_mask), tmp])
         label_all = np.array([])
         aver_mask = np.array([])
         # data.append(
@@ -195,7 +195,7 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
             raise StopIteration
 
         batch = []
-        aver_mask = []
+        aver_mask = []; tmp = []
         for idx in self.batch_indices[self.iteration % n_batches]:
             batch.append(
                 (
@@ -213,6 +213,7 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
                         np.vstack((add_2, np.hstack((add_1, self.dataset[idx][1]))))
                     )
                 )
+                tmp.append(self.dataset[idx][2])
         self._previous_epoch_detail = self.epoch_detail
         self.iteration += 1
 
@@ -222,7 +223,7 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
             self.epoch = epoch
 
         if aver_mask is not None:
-            return batch, aver_mask
+            return batch, aver_mask, tmp
         else:
             return batch
 

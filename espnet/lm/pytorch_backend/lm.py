@@ -148,7 +148,7 @@ class BPTTUpdater(training.StandardUpdater):
         self.model.zero_grad()  # Clear the parameter gradients
         accum = {"loss": 0.0, "nll": 0.0, "count": 0}
         for _ in range(self.accum_grad):
-            batch, aver_mask = train_iter.__next__(aver_mask=True)
+            batch, aver_mask, tmp = train_iter.__next__(aver_mask=True)
             # Concatenate the token IDs to matrices and send them to the device
             # self.converter does this job
             # (it is chainer.dataset.concat_examples by default)
