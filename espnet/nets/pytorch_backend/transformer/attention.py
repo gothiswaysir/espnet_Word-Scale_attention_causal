@@ -123,7 +123,7 @@ class MultiHeadedAttention_wordscale(nn.Module):
 
     """
 
-    def __init__(self, n_head, n_feat, dropout_rate):
+    def __init__(self, n_head, n_feat, dropout_rate, out_put_dir):
         """Construct an MultiHeadedAttention object."""
         super(MultiHeadedAttention_wordscale, self).__init__()
         assert n_feat % n_head == 0
@@ -136,6 +136,7 @@ class MultiHeadedAttention_wordscale(nn.Module):
         self.linear_out = nn.Linear(n_feat, n_feat)
         self.attn = None
         self.dropout = nn.Dropout(p=dropout_rate)
+        self.out_put_dir = out_put_dir
 
     def forward_qkv(self, query, key, value):
         """Transform query, key and value.
@@ -218,7 +219,7 @@ class MultiHeadedAttention_wordscale(nn.Module):
                         #(j,k)
         return scores
 
-    def forward(self, query, key, value, mask, aver_mask):
+    def forward(self, query, key, value, mask, aver_mask, evlword_index=None):
         """Compute scaled dot product attention.
 
         Args:
@@ -259,6 +260,26 @@ class MultiHeadedAttention_wordscale(nn.Module):
 
         word_level = self.forward_attention(v, scores_w, mask.clone())
         subword_level = self.forward_attention(v, scores, mask)
+
+        if evlword_index is not None: #evaluate word embedding
+            import os
+            word_dir_list = os.listdir(self.out_put_dir + '/word_embedding/')
+            word_dir_list.sort(key=lambda x:int(x))
+            curr_word_path = self.out_put_dir + '/word_embedding/' + str(word_dir_list[-1]) +'/'
+            layer_dir_list = os.listdir(curr_word_path)
+            layer_dir_list.sort(key=lambda x:int(x))
+            if len(layer_dir_list) == 0:#this is the first layer
+                curr_layer_path = curr_word_path+'0/'
+            else:
+                curr_layer_path = curr_word_path + str(int(layer_dir_list[-1])+1) + '/' # create new folder for this layer
+            os.mkdir(curr_layer_path)
+
+            for i in range(len(evlword_index)):#doing dump in here, i from 0 to batchsize
+                filename = str(i)+ ".npy"
+                word_represent = word_level[i][evlword_index[i]+1].data.cpu().numpy()
+                numpy.save(curr_layer_path + filename, word_represent)
+                pass
+
         return subword_level+word_level
 
 class RelPositionMultiHeadedAttention(MultiHeadedAttention):

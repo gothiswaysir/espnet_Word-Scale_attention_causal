@@ -55,7 +55,7 @@ class EncoderLayer(nn.Module):
         if self.concat_after:
             self.concat_linear = nn.Linear(size + size, size)
 
-    def forward(self, x, mask, aver_mask, cache=None):
+    def forward(self, x, mask, aver_mask, evlword_index, cache=None):
         """Compute encoded features.
 
         Args:
@@ -81,10 +81,10 @@ class EncoderLayer(nn.Module):
             mask = None if mask is None else mask[:, -1:, :]
 
         if self.concat_after:
-            x_concat = torch.cat((x, self.self_attn(x_q, x, x, mask, aver_mask)), dim=-1)
+            x_concat = torch.cat((x, self.self_attn(x_q, x, x, mask, aver_mask, evlword_index=evlword_index)), dim=-1)
             x = residual + self.concat_linear(x_concat)
         else:
-            x = residual + self.dropout(self.self_attn(x_q, x, x, mask, aver_mask))
+            x = residual + self.dropout(self.self_attn(x_q, x, x, mask, aver_mask, evlword_index=evlword_index))
         if not self.normalize_before:
             x = self.norm1(x)
 

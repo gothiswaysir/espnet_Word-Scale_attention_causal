@@ -47,6 +47,8 @@ from espnet.utils.training.train_utils import check_early_stop
 from espnet.utils.training.train_utils import set_early_stop
 
 import time
+import os
+from tqdm import tqdm
 
 def compute_perplexity(result):
     """Compute and add the perplexity to the LogReport.
@@ -226,6 +228,64 @@ class LMEvaluator(BaseEvaluator):
             reporter.report({"count": count}, self.model.reporter)
         return observation
 
+class LMEvaluator_embedding(BaseEvaluator):
+    """A custom evaluator for a pytorch LM."""
+
+    def __init__(self, val_iter, eval_model, reporter, embedding_path, device):
+        """Initialize class.
+
+        :param chainer.dataset.Iterator val_iter : The validation iterator
+        :param LMInterface eval_model : The model to evaluate
+        :param chainer.Reporter reporter : The observations reporter
+        :param int device : The device id to use
+
+        """
+        super(LMEvaluator_embedding, self).__init__(val_iter, reporter, embedding_path, device=-1)
+        self.model = eval_model
+        self.device = device
+        self.embedding_path = embedding_path
+
+    def evaluate(self):
+        """Evaluate the model."""
+        val_iter = self.get_iterator("main")
+        loss_s = 0; loss_w = 0; loss_all = 0
+        nll_s = 0; nll_w = 0
+        count_s = 0; count_w = 0
+        self.model.eval()
+        with torch.no_grad():
+            for word_id_for_eval in tqdm(range(len(val_iter.batch_indices))): #number of batch, one batch one word
+                self.folder_path = self.embedding_path + str(word_id_for_eval)
+                os.mkdir(self.folder_path)
+
+                batch = val_iter.__next__(aver_mask=True)
+                x, t = concat_examples(batch[0], device=self.device[0], padding=(0, -100))
+                aver_mask = concat_examples_one(batch[1], device=self.device[0], padding=0)
+                if self.device[0] == -1:
+                    l_s, n_s, c_s, l_w, n_w, c_w, l_a = self.model(x, t, aver_mask, evlword_index=batch[2])
+                else:
+                    # apex does not support torch.nn.DataParallel
+                    l_s, n_s, c_s, l_w, n_w, c_w, l_a = self.model(x, t, aver_mask, evlword_index=batch[2])
+                    #l_s, n_s, c_s, l_w, n_w, c_w, l_a = data_parallel(self.model, (x, t, aver_mask, t_w, evlword_index=batch[3]), self.device)
+                loss_s += float(l_s.sum())
+                nll_s += float(n_s.sum())
+                count_s += int(c_s.sum())
+                loss_w += float(l_w.sum())
+                nll_w += float(n_w.sum())
+                count_w += int(c_w.sum())
+                loss_all += float(l_a.sum())
+        self.model.train()
+        # report validation loss
+        observation = {}
+        with reporter.report_scope(observation):
+            reporter.report({"loss": loss_s}, self.model.reporter)
+            reporter.report({"nll": nll_s}, self.model.reporter)
+            reporter.report({"count": count_s}, self.model.reporter)
+            reporter.report({"loss_w": loss_w}, self.model.reporter)
+            reporter.report({"nll_w": nll_w}, self.model.reporter)
+            reporter.report({"count_w": count_w}, self.model.reporter)
+            reporter.report({"loss_all": loss_all}, self.model.reporter)
+        return observation
+
 
 def train(args):
     """Train with the given args.
@@ -305,11 +365,11 @@ def train(args):
     model_conf = args.outdir + "/model.json"
     with open(model_conf, "wb") as f:
         logging.info("writing a model config file to " + model_conf)
-        f.write(
-            json.dumps(vars(args), indent=4, ensure_ascii=False, sort_keys=True).encode(
-                "utf_8"
-            )
-        )
+        # f.write(
+        #     json.dumps(vars(args), indent=4, ensure_ascii=False, sort_keys=True).encode(
+        #         "utf_8"
+        #     )
+        # )
 
     # Set up an optimizer
     opt_class = dynamic_import_optimizer(args.opt, args.backend)
@@ -394,8 +454,8 @@ def train(args):
             TensorboardLogger(writer), trigger=(args.report_interval_iters, "iteration")
         )
 
-    trainer.run()
-    check_early_stop(trainer, args.epoch)
+    # trainer.run()
+    # check_early_stop(trainer, args.epoch)
 
     # compute perplexity for test set
     if args.test_label:
@@ -415,3 +475,31 @@ def train(args):
         result = evaluator()
         compute_perplexity(result)
         logging.info(f"test perplexity: {result['perplexity']}")
+
+    if args.word_embedding_label:
+        import shutil
+        from espnet.lm.lm_utils import read_tokens_for_embedding
+
+        logging.info("to get word representation")
+        word_embed_path = args.outdir + '/word_embedding/'
+        if os.path.exists(word_embed_path):
+            shutil.rmtree(word_embed_path)
+        os.mkdir(word_embed_path)
+        torch_load(args.outdir + "/rnnlm.model.best", model)
+
+        word_id_file = open(args.outdir +'/word_id.json', mode='w'); words_file = open(args.outdir +'/words.json', mode='w')
+        data_load = json.load(open(args.word_embedding_label)); word_id={}; words=[]; id = 0
+        for word,sentce_list in data_load.items():
+            word_id[word]=id; id = id + 1
+            words.append(word)
+        json.dump(word_id, word_id_file, indent=4); json.dump(words, words_file, indent=4)
+        word_id_file.close(); words_file.close()
+
+        test = read_tokens_for_embedding(args.word_embedding_label, args.spm_model, args.char_list_dict, args.subword2word_dict)
+        test_iter = ParallelSentenceIterator(
+            test, 10, max_length=args.maxlen, sos=eos, eos=eos, \
+            repeat=False, shuffle=False
+        )#one batch for one word
+        logging.info("#sentences in the data = " + str(len(test)))
+        evaluator = LMEvaluator_embedding(test_iter, model, reporter, word_embed_path, device=gpu_id)
+        result = evaluator()

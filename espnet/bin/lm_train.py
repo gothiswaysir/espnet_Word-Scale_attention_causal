@@ -183,6 +183,11 @@ def get_parser(parser=None, required=True):
         help="model defined module "
         "(default: espnet.nets.xxx_backend.lm.default:DefaultRNNLM)",
     )
+    parser.add_argument("--word-dict", type=str, default="None", help="train_960_word_units_text_subword.txt")
+    parser.add_argument("--word-embedding-label", type=str,
+                        help="Filename of some label data to get word embedding (representation)")
+    parser.add_argument("--spm-model", type=str,
+                        help="trained sentencepiece model")
     return parser
 
 
@@ -265,6 +270,22 @@ def main(cmd_args):
     char_list.append("<eos>")
     args.char_list_dict = {x: i for i, x in enumerate(char_list)}
     args.n_vocab = len(char_list)
+
+    if args.word_dict != "None":
+        with open(args.word_dict, "rb") as f2:
+            word_dict = f2.readlines()
+        word_list = [entry.decode("utf-8").split(" ") for entry in word_dict]
+        word_list.insert(0, ["<blank>"])
+        word_list.append(["<eos>"])
+        subword2word=[]
+        for i in word_list:
+            tmp=[]
+            for j in i:
+                tmp.append(args.char_list_dict.get(j.strip()))
+            subword2word.append(tuple(tmp))
+        subword2word_dict = {x: i for i, x in enumerate(subword2word)}
+        args.n_vocab_word = len(subword2word_dict)
+        args.subword2word_dict = subword2word_dict
 
     # train
     logging.info("backend = " + args.backend)

@@ -57,6 +57,57 @@ def load_dataset(path, label_dict, outdir=None):
             f["n_oovs"] = n_oovs
     return ret, n_tokens, n_oovs
 
+def read_tokens_for_embedding(filename, spm_model, label_dict, subword2word_dict):
+    import sentencepiece as spm
+    import json
+    data_load = json.load(open(filename))
+    sp = spm.SentencePieceProcessor()
+    sp.Init(model_file=spm_model)
+
+    data = []
+    unk = label_dict["<unk>"]
+    label_all = np.array([])
+    for word,sentce_list in tqdm(data_load.items()):
+        for sentce in sentce_list:
+            nt = 0  # number of token in this word
+            subword_list=sp.encode(sentce[0], out_type=str)
+            tmp = []; aver_mask = np.zeros([len(subword_list), len(subword_list)])
+            for i in range(len(subword_list)):  # look thought a whole sentence
+                label = subword_list[i]
+                label_all = np.append(label_all, label_dict.get(label, unk))
+                if "▁" in label:  # count "▁" from 1, 0 for <sos>.
+                    tmp.append(nt)
+                    if i > 0:
+                        prev_pos = int(sum(tmp[0:len(tmp) - 1]))  # tmp[0,...,i-2]
+                        curr_pos = int(sum(tmp[0:len(tmp)]))  # tmp[0,...,i-1]
+                        aver_mask[prev_pos:curr_pos, prev_pos:curr_pos] = 1 / nt  # this is for previous word
+                    nt = 0
+                nt = nt + 1
+            tmp.append(nt)
+            prev_pos = int(sum(tmp[0:len(tmp) - 1]))  # tmp[0,...,i-2]
+            curr_pos = int(sum(tmp[0:len(tmp)]))  # tmp[0,...,i-1]
+            aver_mask[prev_pos:curr_pos, prev_pos:curr_pos] = 1 / nt
+
+            # for word-level label
+            tmp.remove(0); pos = 0; label_word_all = np.array([])
+            for i in range(len(tmp)):
+                label_in_word = label_all[pos:pos + tmp[i]].tolist()
+                label_word = [subword2word_dict.get(tuple(label_in_word), unk)]
+                padding = [val for val in [-100] for j in range(tmp[i] - 1)]
+                label_word_multiple = label_word + padding
+                label_word_all = np.append(label_word_all, label_word_multiple)
+                pos = pos + tmp[i]
+            if label_word_all.shape != label_all.shape:
+                raise NotImplementedError("Something wrong with make batch.")
+            word_index = sum(tmp[:sentce[1]])
+            data.append([[np.array(label_all, dtype=np.int32),word_index], \
+                         np.array(aver_mask), np.array(label_word_all, dtype=np.int32)])
+            label_all = np.array([])
+            label_word_all = np.array([])
+            aver_mask = np.array([])
+    return data
+    # data=[[label_all, word_index], aver_mask, label_word_all]
+    # word_index is the index of the first subword of the word that need to evaluate its representation
 
 def read_tokens(filename, label_dict):
     """Read tokens as a sequence of sentences
@@ -194,15 +245,24 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
             # epoch (i.e., when all words are visited once).
             raise StopIteration
 
-        batch = []
+        batch = []; batch_evlword_index = []
         aver_mask = []; tmp = []
         for idx in self.batch_indices[self.iteration % n_batches]:
-            batch.append(
-                (
-                    np.append([self.sos], self.dataset[idx][0]),
-                    np.append(self.dataset[idx][0], [self.eos]),
+            if isinstance(self.dataset[0][0], list):# only for evaluate word representation
+                batch.append(
+                    (
+                        np.append([self.sos], self.dataset[idx][0][0]),
+                        np.append(self.dataset[idx][0][0], [self.eos])
+                    )
                 )
-            )
+                batch_evlword_index.append(self.dataset[idx][0][1])
+            else:
+                batch.append(
+                    (
+                        np.append([self.sos], self.dataset[idx][0]),
+                        np.append(self.dataset[idx][0], [self.eos]),
+                    )
+                )
         if aver_mask is not None:
             for idx in self.batch_indices[self.iteration % n_batches]:
                 add_1 = np.zeros([self.dataset[idx][1].shape[1],1])
@@ -223,6 +283,8 @@ class ParallelSentenceIterator(chainer.dataset.Iterator):
             self.epoch = epoch
 
         if aver_mask is not None:
+            if isinstance(self.dataset[0][0], list):  # only for evaluate word representation
+                return batch, aver_mask, batch_evlword_index
             return batch, aver_mask, tmp
         else:
             return batch

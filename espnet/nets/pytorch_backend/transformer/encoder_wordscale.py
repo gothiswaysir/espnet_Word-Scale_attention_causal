@@ -92,6 +92,7 @@ class Encoder(torch.nn.Module):
         positionwise_layer_type="linear",
         positionwise_conv_kernel_size=1,
         padding_idx=-1,
+        out_put_dir=''
     ):
         """Construct an Encoder object."""
         super(Encoder, self).__init__()
@@ -151,7 +152,7 @@ class Encoder(torch.nn.Module):
                 lambda lnum: EncoderLayer(
                     attention_dim,
                     MultiHeadedAttention_wordscale(
-                        attention_heads, attention_dim, attention_dropout_rate
+                        attention_heads, attention_dim, attention_dropout_rate, out_put_dir
                     ),
                     positionwise_layer(*positionwise_layer_args),
                     dropout_rate,
@@ -279,7 +280,7 @@ class Encoder(torch.nn.Module):
             raise NotImplementedError("Support only linear or conv1d.")
         return positionwise_layer, positionwise_layer_args
 
-    def forward(self, xs, masks, aver_mask):
+    def forward(self, xs, masks, aver_mask, evlword_index=None):
         """Encode input sequence.
 
         Args:
@@ -298,7 +299,7 @@ class Encoder(torch.nn.Module):
             xs, masks = self.embed(xs, masks)
         else:
             xs = self.embed(xs)
-        xs, masks, aver_mask = self.encoders(xs, masks, aver_mask)
+        xs, masks, aver_mask, evlword_index = self.encoders(xs, masks, aver_mask, evlword_index)
         if self.normalize_before:
             xs = self.after_norm(xs)
         return xs, masks

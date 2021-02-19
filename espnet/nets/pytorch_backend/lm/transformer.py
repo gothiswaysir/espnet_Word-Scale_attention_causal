@@ -85,6 +85,7 @@ class TransformerLM(nn.Module, LMInterface, BatchScorerInterface):
             dropout_rate=args.dropout_rate,
             input_layer="linear",
             pos_enc_class=pos_enc_class,
+            out_put_dir=args.outdir
         )
         self.decoder = nn.Linear(args.att_unit, n_vocab)
 
@@ -100,7 +101,7 @@ class TransformerLM(nn.Module, LMInterface, BatchScorerInterface):
         return ys_mask.unsqueeze(-2) & word_m
 
     def forward(
-        self, x: torch.Tensor, t: torch.Tensor, aver_mask: torch.Tensor
+        self, x: torch.Tensor, t: torch.Tensor, aver_mask: torch.Tensor, evlword_index=None
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Compute LM loss value from buffer sequences.
 
@@ -121,7 +122,7 @@ class TransformerLM(nn.Module, LMInterface, BatchScorerInterface):
         """
         xm = x != 0
         h, _ = self.encoder(self.embed(x), self._target_mask(x), \
-                            aver_mask)
+                            aver_mask, evlword_index=evlword_index)
         y = self.decoder(h)
         loss = F.cross_entropy(y.view(-1, y.shape[-1]), t.view(-1), reduction="none")
 
