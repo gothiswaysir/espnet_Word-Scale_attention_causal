@@ -98,4 +98,4 @@ class EncoderLayer(nn.Module):
         if cache is not None:
             x = torch.cat([cache, x], dim=1)
 
-        return x, mask, aver_mask
+        return x, mask, aver_mask, evlword_index

@@ -248,9 +248,9 @@ class LMEvaluator_embedding(BaseEvaluator):
     def evaluate(self):
         """Evaluate the model."""
         val_iter = self.get_iterator("main")
-        loss_s = 0; loss_w = 0; loss_all = 0
-        nll_s = 0; nll_w = 0
-        count_s = 0; count_w = 0
+        loss = 0
+        nll = 0
+        count = 0
         self.model.eval()
         with torch.no_grad():
             for word_id_for_eval in tqdm(range(len(val_iter.batch_indices))): #number of batch, one batch one word
@@ -261,29 +261,21 @@ class LMEvaluator_embedding(BaseEvaluator):
                 x, t = concat_examples(batch[0], device=self.device[0], padding=(0, -100))
                 aver_mask = concat_examples_one(batch[1], device=self.device[0], padding=0)
                 if self.device[0] == -1:
-                    l_s, n_s, c_s, l_w, n_w, c_w, l_a = self.model(x, t, aver_mask, evlword_index=batch[2])
+                    l, n, c = self.model(x, t, aver_mask, evlword_index=batch[2])
                 else:
                     # apex does not support torch.nn.DataParallel
-                    l_s, n_s, c_s, l_w, n_w, c_w, l_a = self.model(x, t, aver_mask, evlword_index=batch[2])
+                    l, n, c = self.model(x, t, aver_mask, evlword_index=batch[2])
                     #l_s, n_s, c_s, l_w, n_w, c_w, l_a = data_parallel(self.model, (x, t, aver_mask, t_w, evlword_index=batch[3]), self.device)
-                loss_s += float(l_s.sum())
-                nll_s += float(n_s.sum())
-                count_s += int(c_s.sum())
-                loss_w += float(l_w.sum())
-                nll_w += float(n_w.sum())
-                count_w += int(c_w.sum())
-                loss_all += float(l_a.sum())
+                loss += float(l.sum())
+                nll += float(n.sum())
+                count += int(c.sum())
         self.model.train()
         # report validation loss
         observation = {}
         with reporter.report_scope(observation):
-            reporter.report({"loss": loss_s}, self.model.reporter)
-            reporter.report({"nll": nll_s}, self.model.reporter)
-            reporter.report({"count": count_s}, self.model.reporter)
-            reporter.report({"loss_w": loss_w}, self.model.reporter)
-            reporter.report({"nll_w": nll_w}, self.model.reporter)
-            reporter.report({"count_w": count_w}, self.model.reporter)
-            reporter.report({"loss_all": loss_all}, self.model.reporter)
+            reporter.report({"loss": loss}, self.model.reporter)
+            reporter.report({"nll": nll}, self.model.reporter)
+            reporter.report({"count": count}, self.model.reporter)
         return observation
 
 
